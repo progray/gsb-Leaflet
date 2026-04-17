@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaflet 标记点聚合示例</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet.markercluster CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+        }
+        
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        
+        /* 自定义详情卡片样式 */
+        .custom-popup {
+            min-width: 280px;
+            max-width: 350px;
+        }
+        
+        .popup-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            color: white;
+        }
+        
+        .popup-header {
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .popup-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .popup-title::before {
+            content: "📍";
+            font-size: 20px;
+        }
+        
+        .popup-body {
+            padding: 20px;
+        }
+        
+        .popup-info {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        
+        .info-icon {
+            font-size: 16px;
+            margin-top: 2px;
+        }
+        
+        .info-content {
+            flex: 1;
+        }
+        
+        .info-label {
+            font-size: 12px;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        
+        .info-value {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .popup-footer {
+            padding: 12px 20px;
+            background: rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        
+        .popup-footer button {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s ease;
+        }
+        
+        .popup-footer button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        /* 自定义聚合气泡样式 */
+        .custom-cluster-icon {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            border: 3px solid rgba(255, 255, 255, 0.8);
+        }
+        
+        .custom-cluster-icon.small {
+            width: 40px;
+            height: 40px;
+            font-size: 14px;
+        }
+        
+        .custom-cluster-icon.medium {
+            width: 50px;
+            height: 50px;
+            font-size: 16px;
+        }
+        
+        .custom-cluster-icon.large {
+            width: 60px;
+            height: 60px;
+            font-size: 18px;
+        }
+        
+        /* 自定义标记点样式 */
+        .custom-marker {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            width: 30px;
+            height: 30px;
+            border: 3px solid white;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        .custom-marker::after {
+            content: '';
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: white;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(45deg);
+        }
+        
+        /* 覆盖Leaflet默认的popup样式 */
+        .leaflet-popup-content-wrapper {
+            background: transparent;
+            border-radius: 12px;
+            box-shadow: none;
+            padding: 0;
+        }
+        
+        .leaflet-popup-content {
+            margin: 0;
+            line-height: 1.4;
+        }
+        
+        .leaflet-popup-tip-container {
+            display: none;
+        }
+        
+        .leaflet-popup-close-button {
+            color: white !important;
+            font-size: 20px !important;
+            width: 30px !important;
+            height: 30px !important;
+            line-height: 30px !important;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.2) !important;
+            border-radius: 50%;
+            margin: 8px !important;
+            padding: 0 !important;
+            transition: all 0.3s ease;
+        }
+        
+        .leaflet-popup-close-button:hover {
+            background: rgba(0, 0, 0, 0.3) !important;
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet.markercluster JS -->
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    
+    <script>
+        // 初始化地图
+        const map = L.map('map').setView([39.9042, 116.4074], 10); // 北京坐标
+        
+        // 添加地图图层
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        
+        // 自定义标记点图标
+        const customIcon = L.divIcon({
+            className: 'custom-marker-container',
+            html: '<div class="custom-marker"></div>',
+            iconSize: [30, 30],
+            iconAnchor: [15, 30],
+            popupAnchor: [0, -30]
+        });
+        
+        // 自定义聚合图标创建函数
+        function createCustomClusterIcon(cluster) {
+            const count = cluster.getChildCount();
+            let sizeClass = 'small';
+            if (count > 10) sizeClass = 'medium';
+            if (count > 50) sizeClass = 'large';
+            
+            return L.divIcon({
+                html: `<div class="custom-cluster-icon ${sizeClass}">${count}</div>`,
+                className: 'custom-cluster',
+                iconSize: L.point(40, 40)
+            });
+        }
+        
+        // 创建聚合图层组
+        const markers = L.markerClusterGroup({
+            iconCreateFunction: createCustomClusterIcon,
+            showCoverageOnHover: true,
+            zoomToBoundsOnClick: true,
+            spiderfyOnMaxZoom: true,
+            removeOutsideVisibleBounds: true,
+            animate: true,
+            animateAddingMarkers: true,
+            disableClusteringAtZoom: 15, // 缩放级别15及以上时不聚合
+            maxClusterRadius: 80 // 聚合半径
+        });
+        
+        // 生成模拟数据
+        function generateMockData() {
+            const locations = [];
+            const baseLat = 39.9042; // 北京纬度
+            const baseLng = 116.4074; // 北京经度
+            
+            // 生成100个随机位置
+            for (let i = 0; i < 100; i++) {
+                const latOffset = (Math.random() - 0.5) * 0.5; // 纬度偏移范围
+                const lngOffset = (Math.random() - 0.5) * 0.8; // 经度偏移范围
+                
+                locations.push({
+                    id: i + 1,
+                    name: `地点 ${i + 1}`,
+                    lat: baseLat + latOffset,
+                    lng: baseLng + lngOffset,
+                    description: `这是第 ${i + 1} 个地点的详细描述信息。`,
+                    category: ['餐厅', '酒店', '景点', '购物', '娱乐'][Math.floor(Math.random() * 5)]
+                });
+            }
+            
+            return locations;
+        }
+        
+        // 创建详情卡片HTML
+        function createPopupContent(location) {
+            return `
+                <div class="custom-popup">
+                    <div class="popup-card">
+                        <div class="popup-header">
+                            <h3 class="popup-title">${location.name}</h3>
+                        </div>
+                        <div class="popup-body">
+                            <div class="popup-info">
+                                <div class="info-item">
+                                    <span class="info-icon">🏷️</span>
+                                    <div class="info-content">
+                                        <div class="info-label">类别</div>
+                                        <div class="info-value">${location.category}</div>
+                                    </div>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-icon">📍</span>
+                                    <div class="info-content">
+                                        <div class="info-label">坐标</div>
+                                        <div class="info-value">
+                                            纬度: ${location.lat.toFixed(6)}<br>
+                                            经度: ${location.lng.toFixed(6)}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-icon">📝</span>
+                                    <div class="info-content">
+                                        <div class="info-label">描述</div>
+                                        <div class="info-value">${location.description}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="popup-footer">
+                            <button onclick="alert('查看详情功能：${location.name}')">查看详情</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 添加标记点
+        const mockData = generateMockData();
+        
+        mockData.forEach(location => {
+            const marker = L.marker([location.lat, location.lng], {
+                icon: customIcon,
+                title: location.name
+            });
+            
+            // 绑定详情卡片
+            marker.bindPopup(createPopupContent(location), {
+                maxWidth: 350,
+                minWidth: 280,
+                className: 'custom-popup-container'
+            });
+            
+            // 添加到聚合图层
+            markers.addLayer(marker);
+        });
+        
+        // 将聚合图层添加到地图
+        map.addLayer(markers);
+        
+        // 地图加载完成后自动调整视图以显示所有标记点
+        map.fitBounds(markers.getBounds(), {
+            padding: [50, 50]
+        });
+        
+        // 添加一些交互效果
+        map.on('click', function(e) {
+            console.log('地图点击位置:', e.latlng);
+        });
+        
+        // 监听聚合事件
+        markers.on('clusterclick', function(a) {
+            console.log('聚合点被点击，包含', a.layer.getChildCount(), '个标记点');
+        });
+        
+        console.log('地图初始化完成，共添加', mockData.length, '个标记点');
+    </script>
+</body>
+</html>
