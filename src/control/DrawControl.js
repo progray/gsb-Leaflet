@@ -35,15 +35,12 @@ export class DrawControl extends Control {
 		this._selectedLayer = null;
 		this._mapInteractionState = {};
 
-		this._polylinePoints = [];
-		this._tempPolyline = null;
-		this._polygonPoints = [];
-		this._tempPolygon = null;
-		this._circleCenter = null;
-		this._tempCircle = null;
-		this._isDrawingCircle = false;
-		this._editMode = false;
-		this._deleteMode = false;
+		this._currentDrawing = {
+			type: null,
+			points: [],
+			tempLayer: null,
+			isDrawing: false
+		};
 	}
 
 	onAdd(map) {
@@ -53,16 +50,16 @@ export class DrawControl extends Control {
 		this._drawnLayers.addTo(map);
 
 		if (this.options.draw.marker) {
-			this._createButton('●', 'Draw Marker', 'leaflet-draw-marker', container, this._toggleMarker);
+			this._createButton('●', 'Draw Marker', 'leaflet-draw-marker', container, () => this._activateTool('marker'));
 		}
 		if (this.options.draw.polyline) {
-			this._createButton('〰', 'Draw Polyline', 'leaflet-draw-polyline', container, this._togglePolyline);
+			this._createButton('〰', 'Draw Polyline', 'leaflet-draw-polyline', container, () => this._activateTool('polyline'));
 		}
 		if (this.options.draw.polygon) {
-			this._createButton('⬠', 'Draw Polygon', 'leaflet-draw-polygon', container, this._togglePolygon);
+			this._createButton('⬠', 'Draw Polygon', 'leaflet-draw-polygon', container, () => this._activateTool('polygon'));
 		}
 		if (this.options.draw.circle) {
-			this._createButton('◯', 'Draw Circle', 'leaflet-draw-circle', container, this._toggleCircle);
+			this._createButton('◯', 'Draw Circle', 'leaflet-draw-circle', container, () => this._activateTool('circle'));
 		}
 
 		if (this.options.edit.edit || this.options.edit.remove) {
@@ -70,19 +67,19 @@ export class DrawControl extends Control {
 		}
 
 		if (this.options.edit.edit) {
-			this._createButton('✎', 'Edit Shape', 'leaflet-draw-edit', container, this._toggleEdit);
+			this._createButton('✎', 'Edit Shape', 'leaflet-draw-edit', container, () => this._activateTool('edit'));
 		}
 		if (this.options.edit.remove) {
-			this._createButton('✕', 'Delete Shape', 'leaflet-draw-delete', container, this._toggleDelete);
+			this._createButton('✕', 'Delete Shape', 'leaflet-draw-delete', container, () => this._activateTool('delete'));
 		}
 
-		this._createButton('✖', 'Cancel', 'leaflet-draw-cancel', container, this._cancel);
+		this._createButton('✖', 'Cancel', 'leaflet-draw-cancel', container, () => this._deactivateAllTools());
 
 		return container;
 	}
 
 	onRemove() {
-		this._disableAllTools();
+		this._deactivateAllTools();
 		this._drawnLayers.remove();
 	}
 
@@ -103,130 +100,131 @@ export class DrawControl extends Control {
 		return link;
 	}
 
-	_toggleMarker() {
-		this._toggleTool('marker');
-	}
-
-	_togglePolyline() {
-		this._toggleTool('polyline');
-	}
-
-	_togglePolygon() {
-		this._toggleTool('polygon');
-	}
-
-	_toggleCircle() {
-		this._toggleTool('circle');
-	}
-
-	_toggleEdit() {
-		this._toggleTool('edit');
-	}
-
-	_toggleDelete() {
-		this._toggleTool('delete');
-	}
-
-	_toggleTool(tool) {
+	_activateTool(tool) {
 		if (this._activeTool === tool) {
-			this._disableAllTools();
-		} else {
-			this._disableAllTools();
-			this._activeTool = tool;
-			this._enableTool(tool);
-		}
-	}
-
-	_enableTool(tool) {
-		const container = this._container;
-		const buttons = container.querySelectorAll('a');
-
-		buttons.forEach((btn) => {
-			btn.classList.remove('leaflet-draw-active');
-		});
-
-		const activeButton = container.querySelector(`.leaflet-draw-${tool}`);
-		if (activeButton) {
-			activeButton.classList.add('leaflet-draw-active');
+			this._deactivateAllTools();
+			return;
 		}
 
-		this._map.getContainer().classList.add('leaflet-crosshair');
+		this._deactivateAllTools();
+
+		this._activeTool = tool;
+		this._updateButtonStates();
 		this._disableMapInteraction();
 
 		switch (tool) {
 		case 'marker':
-			this._enableMarkerDraw();
+			this._startMarkerDraw();
 			break;
 		case 'polyline':
-			this._enablePolylineDraw();
+			this._startPolylineDraw();
 			break;
 		case 'polygon':
-			this._enablePolygonDraw();
+			this._startPolygonDraw();
 			break;
 		case 'circle':
-			this._enableCircleDraw();
+			this._startCircleDraw();
 			break;
 		case 'edit':
-			this._enableEditMode();
+			this._startEditMode();
 			break;
 		case 'delete':
-			this._enableDeleteMode();
+			this._startDeleteMode();
 			break;
 		}
 	}
 
-	_disableAllTools() {
-		if (this._activeTool) {
-			this._disableTool(this._activeTool);
-		}
-		this._activeTool = null;
+	_deactivateAllTools() {
+		if (!this._activeTool) { return; }
 
-		const container = this._container;
-		if (container) {
-			const buttons = container.querySelectorAll('a');
-			buttons.forEach((btn) => {
-				btn.classList.remove('leaflet-draw-active');
-			});
-		}
-
-		if (this._map) {
-			this._map.getContainer().classList.remove('leaflet-crosshair');
-			this._restoreMapInteraction();
-		}
-	}
-
-	_disableTool(tool) {
-		switch (tool) {
+		switch (this._activeTool) {
 		case 'marker':
-			this._disableMarkerDraw();
+			this._stopMarkerDraw();
 			break;
 		case 'polyline':
-			this._disablePolylineDraw();
+			this._stopPolylineDraw();
 			break;
 		case 'polygon':
-			this._disablePolygonDraw();
+			this._stopPolygonDraw();
 			break;
 		case 'circle':
-			this._disableCircleDraw();
+			this._stopCircleDraw();
 			break;
 		case 'edit':
-			this._disableEditMode();
+			this._stopEditMode();
 			break;
 		case 'delete':
-			this._disableDeleteMode();
+			this._stopDeleteMode();
 			break;
+		}
+
+		this._activeTool = null;
+		this._updateButtonStates();
+		this._restoreMapInteraction();
+	}
+
+	_updateButtonStates() {
+		const container = this._container;
+		if (!container) { return; }
+
+		const buttons = container.querySelectorAll('a');
+		buttons.forEach((btn) => {
+			btn.classList.remove('leaflet-draw-active');
+		});
+
+		if (this._activeTool) {
+			const activeButton = container.querySelector(`.leaflet-draw-${this._activeTool}`);
+			if (activeButton) {
+				activeButton.classList.add('leaflet-draw-active');
+			}
 		}
 	}
 
-	_cancel() {
-		this._disableAllTools();
+	_disableMapInteraction() {
+		const map = this._map;
+		if (!map) { return; }
+
+		this._mapInteractionState = {
+			dragging: map.dragging?.enabled(),
+			scrollWheelZoom: map.scrollWheelZoom?.enabled(),
+			doubleClickZoom: map.doubleClickZoom?.enabled(),
+			boxZoom: map.boxZoom?.enabled(),
+			keyboard: map.keyboard?.enabled(),
+			tapHold: map.tapHold?.enabled()
+		};
+
+		if (map.dragging?.enabled()) { map.dragging.disable(); }
+		if (map.scrollWheelZoom?.enabled()) { map.scrollWheelZoom.disable(); }
+		if (map.doubleClickZoom?.enabled()) { map.doubleClickZoom.disable(); }
+		if (map.boxZoom?.enabled()) { map.boxZoom.disable(); }
+		if (map.keyboard?.enabled()) { map.keyboard.disable(); }
+		if (map.tapHold?.enabled()) { map.tapHold.disable(); }
+
+		map.getContainer().classList.add('leaflet-crosshair');
 	}
 
-	_enableMarkerDraw() {
+	_restoreMapInteraction() {
+		const map = this._map;
+		if (!map) { return; }
+
+		const state = this._mapInteractionState;
+
+		if (state.dragging && !map.dragging?.enabled()) { map.dragging.enable(); }
+		if (state.scrollWheelZoom && !map.scrollWheelZoom?.enabled()) { map.scrollWheelZoom.enable(); }
+		if (state.doubleClickZoom && !map.doubleClickZoom?.enabled()) { map.doubleClickZoom.enable(); }
+		if (state.boxZoom && !map.boxZoom?.enabled()) { map.boxZoom.enable(); }
+		if (state.keyboard && !map.keyboard?.enabled()) { map.keyboard.enable(); }
+		if (state.tapHold && !map.tapHold?.enabled()) { map.tapHold.enable(); }
+
+		map.getContainer().classList.remove('leaflet-crosshair');
+		this._mapInteractionState = {};
+	}
+
+	_startMarkerDraw() {
 		this._map.on('click', this._onMarkerClick, this);
 	}
 
-	_disableMarkerDraw() {
+	_stopMarkerDraw() {
 		this._map.off('click', this._onMarkerClick, this);
 	}
 
@@ -236,91 +234,120 @@ export class DrawControl extends Control {
 		this._fireDrawEvent('draw:created', {layer: marker, layerType: 'marker'});
 	}
 
-	_enablePolylineDraw() {
-		this._polylinePoints = [];
-		this._tempPolyline = null;
+	_startPolylineDraw() {
+		this._currentDrawing = {
+			type: 'polyline',
+			points: [],
+			tempLayer: null,
+			isDrawing: false
+		};
 		this._map.on('click', this._onPolylineClick, this);
 		this._map.on('mousemove', this._onPolylineMouseMove, this);
 	}
 
-	_disablePolylineDraw() {
+	_stopPolylineDraw() {
 		this._map.off('click', this._onPolylineClick, this);
 		this._map.off('mousemove', this._onPolylineMouseMove, this);
-		if (this._tempPolyline) {
-			this._tempPolyline.remove();
-			this._tempPolyline = null;
+
+		if (this._currentDrawing.tempLayer) {
+			this._currentDrawing.tempLayer.remove();
+			this._currentDrawing.tempLayer = null;
 		}
-		this._polylinePoints = [];
+		this._currentDrawing = {
+			type: null,
+			points: [],
+			tempLayer: null,
+			isDrawing: false
+		};
 	}
 
 	_onPolylineClick(e) {
 		DomEvent.stopPropagation(e);
+		const latlng = e.latlng;
+		const points = this._currentDrawing.points;
 
-		if (this._polylinePoints.length >= 2) {
-			const lastPoint = this._polylinePoints[this._polylinePoints.length - 1];
-			const dist = this._map.distance(lastPoint, e.latlng);
+		if (points.length >= 2) {
+			const lastPoint = points[points.length - 1];
+			const dist = this._map.distance(lastPoint, latlng);
 
-			if (dist < 20 && this._polylinePoints.length >= 2) {
+			if (dist < 20) {
 				this._finishPolyline();
 				return;
 			}
 		}
 
-		this._polylinePoints.push(e.latlng);
+		points.push(latlng);
+		this._currentDrawing.isDrawing = true;
 
-		if (this._polylinePoints.length === 1) {
-			this._tempPolyline = new Polyline(this._polylinePoints, {
+		if (points.length === 1) {
+			this._currentDrawing.tempLayer = new Polyline(points, {
 				color: '#3388ff',
 				weight: 3,
 				opacity: 0.8,
 				dashArray: '10, 10'
 			});
-			this._tempPolyline.addTo(this._map);
+			this._currentDrawing.tempLayer.addTo(this._map);
 		} else {
-			this._tempPolyline.setLatLngs(this._polylinePoints);
+			this._currentDrawing.tempLayer.setLatLngs(points);
 		}
 	}
 
 	_onPolylineMouseMove(e) {
-		if (this._polylinePoints.length > 0 && this._tempPolyline) {
-			const tempPoints = [...this._polylinePoints, e.latlng];
-			this._tempPolyline.setLatLngs(tempPoints);
+		if (!this._currentDrawing.isDrawing || !this._currentDrawing.tempLayer) {
+			return;
 		}
+
+		const tempPoints = [...this._currentDrawing.points, e.latlng];
+		this._currentDrawing.tempLayer.setLatLngs(tempPoints);
 	}
 
 	_finishPolyline() {
-		if (this._polylinePoints.length >= 2) {
-			const polyline = new Polyline(this._polylinePoints);
+		const points = this._currentDrawing.points;
+		if (points.length >= 2) {
+			const polyline = new Polyline(points);
 			polyline.addTo(this._drawnLayers);
 			this._fireDrawEvent('draw:created', {layer: polyline, layerType: 'polyline'});
 		}
-		this._disablePolylineDraw();
-		this._enablePolylineDraw();
+
+		this._stopPolylineDraw();
+		this._startPolylineDraw();
 	}
 
-	_enablePolygonDraw() {
-		this._polygonPoints = [];
-		this._tempPolygon = null;
+	_startPolygonDraw() {
+		this._currentDrawing = {
+			type: 'polygon',
+			points: [],
+			tempLayer: null,
+			isDrawing: false
+		};
 		this._map.on('click', this._onPolygonClick, this);
 		this._map.on('mousemove', this._onPolygonMouseMove, this);
 	}
 
-	_disablePolygonDraw() {
+	_stopPolygonDraw() {
 		this._map.off('click', this._onPolygonClick, this);
 		this._map.off('mousemove', this._onPolygonMouseMove, this);
-		if (this._tempPolygon) {
-			this._tempPolygon.remove();
-			this._tempPolygon = null;
+
+		if (this._currentDrawing.tempLayer) {
+			this._currentDrawing.tempLayer.remove();
+			this._currentDrawing.tempLayer = null;
 		}
-		this._polygonPoints = [];
+		this._currentDrawing = {
+			type: null,
+			points: [],
+			tempLayer: null,
+			isDrawing: false
+		};
 	}
 
 	_onPolygonClick(e) {
 		DomEvent.stopPropagation(e);
+		const latlng = e.latlng;
+		const points = this._currentDrawing.points;
 
-		if (this._polygonPoints.length >= 3) {
-			const firstPoint = this._polygonPoints[0];
-			const dist = this._map.distance(firstPoint, e.latlng);
+		if (points.length >= 3) {
+			const firstPoint = points[0];
+			const dist = this._map.distance(firstPoint, latlng);
 
 			if (dist < 20) {
 				this._finishPolygon();
@@ -328,65 +355,79 @@ export class DrawControl extends Control {
 			}
 		}
 
-		this._polygonPoints.push(e.latlng);
+		points.push(latlng);
+		this._currentDrawing.isDrawing = true;
 
-		if (this._polygonPoints.length === 1) {
-			this._tempPolygon = new Polygon(this._polygonPoints, {
+		if (points.length === 1) {
+			this._currentDrawing.tempLayer = new Polygon(points, {
 				color: '#3388ff',
 				weight: 3,
 				opacity: 0.8,
 				fillOpacity: 0.2,
 				dashArray: '10, 10'
 			});
-			this._tempPolygon.addTo(this._map);
+			this._currentDrawing.tempLayer.addTo(this._map);
 		} else {
-			this._tempPolygon.setLatLngs(this._polygonPoints);
+			this._currentDrawing.tempLayer.setLatLngs(points);
 		}
 	}
 
 	_onPolygonMouseMove(e) {
-		if (this._polygonPoints.length > 0 && this._tempPolygon) {
-			const tempPoints = [...this._polygonPoints, e.latlng];
-			this._tempPolygon.setLatLngs(tempPoints);
+		if (!this._currentDrawing.isDrawing || !this._currentDrawing.tempLayer) {
+			return;
 		}
+
+		const tempPoints = [...this._currentDrawing.points, e.latlng];
+		this._currentDrawing.tempLayer.setLatLngs(tempPoints);
 	}
 
 	_finishPolygon() {
-		if (this._polygonPoints.length >= 3) {
-			const polygon = new Polygon(this._polygonPoints);
+		const points = this._currentDrawing.points;
+		if (points.length >= 3) {
+			const polygon = new Polygon(points);
 			polygon.addTo(this._drawnLayers);
 			this._fireDrawEvent('draw:created', {layer: polygon, layerType: 'polygon'});
 		}
-		this._disablePolygonDraw();
-		this._enablePolygonDraw();
+
+		this._stopPolygonDraw();
+		this._startPolygonDraw();
 	}
 
-	_enableCircleDraw() {
-		this._circleCenter = null;
-		this._tempCircle = null;
-		this._isDrawingCircle = false;
+	_startCircleDraw() {
+		this._currentDrawing = {
+			type: 'circle',
+			center: null,
+			tempLayer: null,
+			isDrawing: false
+		};
 		this._map.on('click', this._onCircleClick, this);
 		this._map.on('mousemove', this._onCircleMouseMove, this);
 	}
 
-	_disableCircleDraw() {
+	_stopCircleDraw() {
 		this._map.off('click', this._onCircleClick, this);
 		this._map.off('mousemove', this._onCircleMouseMove, this);
-		if (this._tempCircle) {
-			this._tempCircle.remove();
-			this._tempCircle = null;
+
+		if (this._currentDrawing.tempLayer) {
+			this._currentDrawing.tempLayer.remove();
+			this._currentDrawing.tempLayer = null;
 		}
-		this._circleCenter = null;
-		this._isDrawingCircle = false;
+		this._currentDrawing = {
+			type: null,
+			center: null,
+			tempLayer: null,
+			isDrawing: false
+		};
 	}
 
 	_onCircleClick(e) {
 		DomEvent.stopPropagation(e);
+		const latlng = e.latlng;
 
-		if (!this._isDrawingCircle) {
-			this._circleCenter = e.latlng;
-			this._isDrawingCircle = true;
-			this._tempCircle = new Circle(this._circleCenter, {
+		if (!this._currentDrawing.isDrawing) {
+			this._currentDrawing.center = latlng;
+			this._currentDrawing.isDrawing = true;
+			this._currentDrawing.tempLayer = new Circle(latlng, {
 				radius: 0,
 				color: '#3388ff',
 				weight: 3,
@@ -394,71 +435,50 @@ export class DrawControl extends Control {
 				fillOpacity: 0.2,
 				dashArray: '10, 10'
 			});
-			this._tempCircle.addTo(this._map);
+			this._currentDrawing.tempLayer.addTo(this._map);
 		} else {
-			const radius = this._tempCircle.getRadius();
+			const radius = this._currentDrawing.tempLayer.getRadius();
 			if (radius > 0) {
-				const circle = new Circle(this._circleCenter, {radius});
+				const circle = new Circle(this._currentDrawing.center, {radius});
 				circle.addTo(this._drawnLayers);
 				this._fireDrawEvent('draw:created', {layer: circle, layerType: 'circle'});
 			}
-			this._disableCircleDraw();
-			this._enableCircleDraw();
+
+			this._stopCircleDraw();
+			this._startCircleDraw();
 		}
 	}
 
 	_onCircleMouseMove(e) {
-		if (this._isDrawingCircle && this._circleCenter && this._tempCircle) {
-			const radius = this._map.distance(this._circleCenter, e.latlng);
-			this._tempCircle.setRadius(radius);
+		if (!this._currentDrawing.isDrawing || !this._currentDrawing.tempLayer) {
+			return;
 		}
+
+		const radius = this._map.distance(this._currentDrawing.center, e.latlng);
+		this._currentDrawing.tempLayer.setRadius(radius);
 	}
 
-	_enableEditMode() {
-		this._editMode = true;
+	_startEditMode() {
 		this._drawnLayers.eachLayer((layer) => {
-			layer.on('click', this._onLayerClick, this);
+			layer.on('click', this._onEditLayerClick, this);
 			if (layer.setStyle) {
 				layer.setStyle({weight: 4});
 			}
 		});
 	}
 
-	_disableEditMode() {
-		this._editMode = false;
+	_stopEditMode() {
 		this._clearEditMarkers();
 		this._selectedLayer = null;
 		this._drawnLayers.eachLayer((layer) => {
-			layer.off('click', this._onLayerClick, this);
+			layer.off('click', this._onEditLayerClick, this);
 			if (layer.setStyle) {
 				layer.setStyle({weight: 3});
 			}
 		});
 	}
 
-	_enableDeleteMode() {
-		this._deleteMode = true;
-		this._drawnLayers.eachLayer((layer) => {
-			layer.on('click', this._onDeleteLayerClick, this);
-			if (layer.setStyle) {
-				layer.setStyle({color: '#ff0000'});
-			}
-		});
-	}
-
-	_disableDeleteMode() {
-		this._deleteMode = false;
-		this._drawnLayers.eachLayer((layer) => {
-			layer.off('click', this._onDeleteLayerClick, this);
-			if (layer.setStyle) {
-				layer.setStyle({color: '#3388ff'});
-			}
-		});
-	}
-
-	_onLayerClick(e) {
-		if (!this._editMode) { return; }
-
+	_onEditLayerClick(e) {
 		DomEvent.stopPropagation(e);
 		const layer = e.layer || e.target;
 
@@ -472,9 +492,25 @@ export class DrawControl extends Control {
 		}
 	}
 
-	_onDeleteLayerClick(e) {
-		if (!this._deleteMode) { return; }
+	_startDeleteMode() {
+		this._drawnLayers.eachLayer((layer) => {
+			layer.on('click', this._onDeleteLayerClick, this);
+			if (layer.setStyle) {
+				layer.setStyle({color: '#ff0000'});
+			}
+		});
+	}
 
+	_stopDeleteMode() {
+		this._drawnLayers.eachLayer((layer) => {
+			layer.off('click', this._onDeleteLayerClick, this);
+			if (layer.setStyle) {
+				layer.setStyle({color: '#3388ff'});
+			}
+		});
+	}
+
+	_onDeleteLayerClick(e) {
 		DomEvent.stopPropagation(e);
 		const layer = e.layer || e.target;
 
@@ -570,67 +606,6 @@ export class DrawControl extends Control {
 			marker.remove();
 		});
 		this._editMarkers = [];
-	}
-
-	_disableMapInteraction() {
-		const map = this._map;
-		if (!map) { return; }
-
-		this._mapInteractionState = {
-			dragging: map.dragging?.enabled(),
-			scrollWheelZoom: map.scrollWheelZoom?.enabled(),
-			doubleClickZoom: map.doubleClickZoom?.enabled(),
-			boxZoom: map.boxZoom?.enabled(),
-			keyboard: map.keyboard?.enabled(),
-			tapHold: map.tapHold?.enabled()
-		};
-
-		if (map.dragging?.enabled()) {
-			map.dragging.disable();
-		}
-		if (map.scrollWheelZoom?.enabled()) {
-			map.scrollWheelZoom.disable();
-		}
-		if (map.doubleClickZoom?.enabled()) {
-			map.doubleClickZoom.disable();
-		}
-		if (map.boxZoom?.enabled()) {
-			map.boxZoom.disable();
-		}
-		if (map.keyboard?.enabled()) {
-			map.keyboard.disable();
-		}
-		if (map.tapHold?.enabled()) {
-			map.tapHold.disable();
-		}
-	}
-
-	_restoreMapInteraction() {
-		const map = this._map;
-		if (!map) { return; }
-
-		const state = this._mapInteractionState;
-
-		if (state.dragging && !map.dragging?.enabled()) {
-			map.dragging.enable();
-		}
-		if (state.scrollWheelZoom && !map.scrollWheelZoom?.enabled()) {
-			map.scrollWheelZoom.enable();
-		}
-		if (state.doubleClickZoom && !map.doubleClickZoom?.enabled()) {
-			map.doubleClickZoom.enable();
-		}
-		if (state.boxZoom && !map.boxZoom?.enabled()) {
-			map.boxZoom.enable();
-		}
-		if (state.keyboard && !map.keyboard?.enabled()) {
-			map.keyboard.enable();
-		}
-		if (state.tapHold && !map.tapHold?.enabled()) {
-			map.tapHold.enable();
-		}
-
-		this._mapInteractionState = {};
 	}
 
 	_fireDrawEvent(type, data) {
